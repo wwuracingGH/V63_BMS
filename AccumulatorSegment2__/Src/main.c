@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SPI_TIMEOUT 200
+#define SPI_TIMEOUT 50
 
 #define ECS_HIGH 	0x80 //If on, enable cell selection
 #define SC0_HIGH 	0x40 //Select cell for voltage readout during hold phase
@@ -130,76 +130,90 @@ int main(void)
 	uint8_t *balance_high = &u1_buffer_in[1];
 	uint8_t *config = &u1_buffer_in[2];
 
-	uint16_t cell_voltages[4] = { 0 };
+	float cell_voltages[4] = { 0 };
 
-	uint8_t buffer_out[8] = { 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF };
+	uint32_t buffer_out[2] = { 0x01234567, 0x89ABCDEF};
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1) {
+	do {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		//We don't actually need the cell voltages from the left half;
-		//we just use this to sync up with the left half of the BMS segment board
-		uint16_t buffer_in[12] = { 0 };
-		HAL_SPI_Receive(&hspi1, (uint8_t *) buffer_in, 12 * sizeof(uint16_t), SPI_TIMEOUT*15);
 
-//		//charge up sample capacitors
-//		*balance_low = 0;
-//		*balance_high = 0;
-//		*config = 0;
-//
-//		//start sample phase - charge up sample capacitors
-//		HAL_SPI_Transmit(&hspi1, buffer_out, 3, SPI_TIMEOUT);
-//
-//		//wait for sample phase to complete, at least 40 ms
-//		HAL_Delay(SAMPLE_DELAY);
-//
-//		//start hold phase
-//		*config = SMPLB_HIGH;
-//		HAL_SPI_Transmit(&hspi1, buffer_out, 3, SPI_TIMEOUT);
-//
-//		//wait for sample cap voltages to shift to ground reference, at least 50.5 us
-//		delay_us(HOLD_DELAY + LEVEL_SHIFT_DELAY);
-//
-//		*balance_low = 0;
-//		*balance_high = 0;
-//		//Measure voltage of every set of cells
-//		for (int i = 0; i < 4; i++) {
-//			*config = ECS_HIGH;
-//			//Set SC0 and SC1, depending on the value of i
-//			//Since we're only measuring 4 cells, SC2 and SC3 are always 0
-//			int cell = i;
-//			if (i / 2 != 0) {
-//				cell -= 2;
-//				*config = *config || SC1_HIGH;
-//			}
-//			if (cell == 1) {
-//				*config = *config || SC0_HIGH;
-//			}
-//			//tell MAX14920 to measure voltage of cell i
-//			HAL_SPI_Transmit(&hspi1, u1_buffer_in, 3, 200);
-//
-//			//Time delay to allow voltage measurement to settle.
-//			//According to MAX14920 datasheet, we should have a delay of over 5us.
-//			//I was gonna do this with a bunch of NOP instructions, but it turns out
-//			//	that reading from ADC takes a few microseconds anyways.
-//			//  		for (int j = 0; j < 200; j++) {
-//			//  			asm("NOP");
-//			//  		}
-//
-//			//read voltage of cell i from ADC
-//			HAL_ADC_Start(&hadc1);
-//			HAL_ADC_PollForConversion(&hadc1, 2);
-//			cell_voltages[i] = HAL_ADC_GetValue(&hadc1);
-//		}
+		uint8_t receive_sync[4] = {0xde, 0xad, 0xda, 0xed};
+		uint8_t transmit_sync[4] = {0xbe, 0xef, 0xfe, 0xeb};
+		//sync up with BMS controller
+		HAL_SPI_Receive(&hspi2, receive_sync, 1, SPI_TIMEOUT*5);
+		//HAL_SPI_Transmit(&hspi2, (uint8_t *) buffer_out, 8, SPI_TIMEOUT);
+		//continue;
+
+		//charge up sample capacitors
+		*balance_low = 0;
+		*balance_high = 0;
+		*config = 0;
+
+		//start sample phase - charge up sample capacitors
+		HAL_SPI_Transmit(&hspi1, u1_buffer_in, 3, SPI_TIMEOUT);
+
+		//wait for sample phase to complete, at least 40 ms
+		HAL_Delay(SAMPLE_DELAY);
+
+		//start hold phase
+		*config = SMPLB_HIGH;
+		HAL_SPI_Transmit(&hspi1, u1_buffer_in, 3, SPI_TIMEOUT);
+
+		//wait for sample cap voltages to shift to ground reference, at least 50.5 us
+		delay_us(HOLD_DELAY + LEVEL_SHIFT_DELAY);
+
+		*balance_low = 0;
+		*balance_high = 0;
+		//Measure voltage of every set of cells
+		int lowest_cell = 0;
+		int highest_cell = 0;
+		for (int i = 0; i < 4; i++) {
+			*config = ECS_HIGH;
+			//Set SC0 and SC1, depending on the value of i
+			//Since we're only measuring 4 cells, SC2 and SC3 are always 0
+			int cell = i;
+			if (i / 2 != 0) {
+				cell -= 2;
+				*config = *config || SC1_HIGH;
+			}
+			if (cell == 1) {
+				*config = *config || SC0_HIGH;
+			}
+			//tell MAX14920 to measure voltage of cell i
+			HAL_SPI_Transmit(&hspi1, u1_buffer_in, 3, SPI_TIMEOUT);
+
+			//Time delay to allow voltage measurement to settle.
+			//According to MAX14920 datasheet, we should have a delay of over 5us.
+			//I was gonna do this with a bunch of NOP instructions, but it turns out
+			//	that reading from ADC takes a few microseconds anyways.
+			//  		for (int j = 0; j < 200; j++) {
+			//  			asm("NOP");
+			//  		}
+
+			//read voltage of cell i from ADC
+			HAL_ADC_Start(&hadc1);
+			HAL_ADC_PollForConversion(&hadc1, 2);
+			cell_voltages[i] = HAL_ADC_GetValue(&hadc1) / 4096.0 * 15100 / 10000;
+			if (cell_voltages[i] > cell_voltages[highest_cell]) {
+				highest_cell = i;
+			} else if (cell_voltages[i] < cell_voltages[lowest_cell]) {
+				lowest_cell = i;
+			}
+		}
+
+		buffer_out[0] = 12345687;//cell_voltages[lowest_cell];
+		buffer_out[1] = 89012344;//cell_voltages[highest_cell];
 
 		//send cell voltages to BMS controller
-		HAL_SPI_Transmit(&hspi2, (uint8_t *) cell_voltages, 4 * sizeof(uint16_t), SPI_TIMEOUT);
-	}
+		HAL_SPI_Transmit(&hspi2, (uint8_t *) buffer_out, 8, SPI_TIMEOUT*50);
+		continue;
+	} while (0);
   /* USER CODE END 3 */
 }
 
@@ -398,7 +412,7 @@ static void MX_TIM14_Init(void)
   htim14.Instance = TIM14;
   htim14.Init.Prescaler = 16-1;
   htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim14.Init.Period = 65535-1;
+  htim14.Init.Period = 65535;
   htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim14) != HAL_OK)
@@ -437,10 +451,10 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
-	__disable_irq();
-	while (1)
-	{
-	}
+//	__disable_irq();
+//	while (1)
+//	{
+//	}
   /* USER CODE END Error_Handler_Debug */
 }
 

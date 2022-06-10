@@ -58,8 +58,6 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define NRST_U3_Pin GPIO_PIN_2
-#define NRST_U3_GPIO_Port GPIOF
 #define Vcell_U1_Pin GPIO_PIN_5
 #define Vcell_U1_GPIO_Port GPIOA
 #define NSS1_U1_Pin GPIO_PIN_0
@@ -75,5 +73,3 @@ void Error_Handler(void);
 #endif
 
 #endif /* __MAIN_H */
-
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

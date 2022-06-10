@@ -1045,10 +1045,13 @@
   <group>
     <name>Drivers</name>
     <group>
-      <name>STM32G0xx_HAL_Driver</name>
+      <name>CMSIS</name>
       <file>
-        <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_gpio.c</name>
+        <name>$PROJ_DIR$/../Src/system_stm32g0xx.c</name>
       </file>
+    </group>
+    <group>
+      <name>STM32G0xx_HAL_Driver</name>
       <file>
         <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_adc.c</name>
       </file>
@@ -1074,10 +1077,16 @@
         <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_flash_ex.c</name>
       </file>
       <file>
+        <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_gpio.c</name>
+      </file>
+      <file>
         <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_dma.c</name>
       </file>
       <file>
         <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_dma_ex.c</name>
+      </file>
+      <file>
+        <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_ll_dma.c</name>
       </file>
       <file>
         <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_pwr.c</name>
@@ -1105,12 +1114,6 @@
       </file>
       <file>
         <name>$PROJ_DIR$/../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_tim_ex.c</name>
-      </file>
-    </group>
-    <group>
-      <name>CMSIS</name>
-      <file>
-        <name>$PROJ_DIR$/../Src/system_stm32g0xx.c</name>
       </file>
     </group>
   </group>
