@@ -99,6 +99,9 @@ static void MX_TIM1_Init(void);
 
 //Sensor data will automatically be placed in here through DMA
 volatile uint16_t raw_sensors[9];
+uint8_t low_cell_temps[6];
+uint8_t avg_cell_temps[6];
+uint8_t high_cell_temps[6];
 
 float get_sensor(uint8_t sensor) {
 	return raw_sensors[sensor] * 3.3 / 4096;
@@ -153,9 +156,9 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  MX_DMA_Init();
   MX_GPIO_Init();
   MX_ADC_Init();
+  MX_DMA_Init();
   MX_CAN_Init();
   MX_TIM17_Init();
   MX_TIM14_Init();
@@ -185,22 +188,22 @@ int main(void)
 	bspd_diag_header.DLC = 1;
 
 	torque_command_header.IDE = CAN_ID_STD;
-	torque_command_header.StdId = 0x0C0;
+	torque_command_header.StdId = 0xC0;
 	torque_command_header.RTR = CAN_RTR_DATA;
 	torque_command_header.DLC = 8;
 
 	//Configure the CAN filter.
 	//This filters out all the can messages we don't want to listen to.
 	CAN_FilterTypeDef can_filter_config;
-	can_filter_config.FilterActivation = CAN_FILTER_ENABLE;
+	can_filter_config.FilterActivation = CAN_FILTER_DISABLE;
 	can_filter_config.SlaveStartFilterBank = 13;
 	can_filter_config.FilterBank = 13;
 	can_filter_config.FilterFIFOAssignment = CAN_FILTER_FIFO0;
 	can_filter_config.FilterMode = CAN_FILTERMODE_IDMASK;
 	can_filter_config.FilterScale = CAN_FILTERSCALE_32BIT;
-	can_filter_config.FilterIdHigh = 0x0A5<<5;
+	can_filter_config.FilterIdHigh = (0x0A5)<<5;
 	can_filter_config.FilterIdLow = 0x0;
-	can_filter_config.FilterMaskIdHigh = 0x0A5<<5;
+	can_filter_config.FilterMaskIdHigh = (0x0A5)<<5;
 	can_filter_config.FilterMaskIdLow = 0x0000;
 
 	//enable CANbus filter config
@@ -219,15 +222,14 @@ int main(void)
 
 	HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
 
-	HAL_TIM_Base_Start_IT(&htim1);
 	HAL_ADC_Start_DMA(&hadc, (uint32_t *) raw_sensors, 9);
+	HAL_TIM_Base_Start_IT(&htim1);
 
 	uint32_t tx_mailbox;
 	uint8_t tx_test_data[8] = {0x00, 0x22, 0x44, 0x66, 0x88, 0xAA, 0xCC, 0xEE};
 	if (HAL_CAN_AddTxMessage(&hcan, &torque_command_header, tx_test_data, &tx_mailbox) != HAL_OK) {
 		Error_Handler();
 	}
-	//HAL_TIM_Base_Start_IT(&htim16);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -418,9 +420,9 @@ static void MX_CAN_Init(void)
   hcan.Init.TimeSeg1 = CAN_BS1_13TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_2TQ;
   hcan.Init.TimeTriggeredMode = DISABLE;
-  hcan.Init.AutoBusOff = DISABLE;
+  hcan.Init.AutoBusOff = ENABLE;
   hcan.Init.AutoWakeUp = ENABLE;
-  hcan.Init.AutoRetransmission = DISABLE;
+  hcan.Init.AutoRetransmission = ENABLE;
   hcan.Init.ReceiveFifoLocked = DISABLE;
   hcan.Init.TransmitFifoPriority = ENABLE;
   if (HAL_CAN_Init(&hcan) != HAL_OK)
@@ -457,7 +459,7 @@ static void MX_TIM1_Init(void)
   htim1.Init.Period = 500-1;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
   {
     Error_Handler();
@@ -641,8 +643,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		ready_to_drive = true;
 
 		//start htim1, which starts the ADC DMA, which triggers the sending of sensor data to canbus
-		HAL_TIM_Base_Start_IT(&htim1);
 		HAL_ADC_Start_DMA(&hadc, (uint32_t *) raw_sensors, 9);
+		HAL_TIM_Base_Start_IT(&htim1);
 	}
 }
 
@@ -650,16 +652,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 //ADC events are automatically triggered by htim1.
 //After the data gets DMA'd into RAM, this function is called.
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	//If we had more than 1 ADC on this chip, we'd use this to find out which one triggered the callback.
-	UNUSED(hadc);
 
-	HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
 	uint32_t tx_mailbox;
 	uint8_t tx_test_data[8] = {0x00, 0x22, 0x44, 0x66, 0x88, 0xAA, 0xCC, 0xEE};
 	if (HAL_CAN_AddTxMessage(&hcan, &torque_command_header, tx_test_data, &tx_mailbox) != HAL_OK) {
 		Error_Handler();
 	}
 
+	while (HAL_CAN_IsTxMessagePending(&hcan, tx_mailbox) != 0) {}
+
+	HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, HAL_GPIO_RESET);
 	//get sensor values
 	//ADC is constantly happening through DMA, so we don't have to manually scan in the values
 
@@ -718,21 +720,25 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 		Error_Handler();
 	}
 
+	while (HAL_CAN_IsTxMessagePending(&hcan, tx_mailbox)) {HAL_Delay(1);}
+
 	if (HAL_CAN_AddTxMessage(&hcan, &shock_length_header, (uint8_t *) shock_lengths, &tx_mailbox) != HAL_OK) {
 		Error_Handler();
 	}
 
-	//while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) < 2) {asm("NOP");asm("NOP");asm("NOP");asm("NOP");asm("NOP");}
+	while (HAL_CAN_IsTxMessagePending(&hcan, tx_mailbox)) {HAL_Delay(1);}
 
 	if (HAL_CAN_AddTxMessage(&hcan, &brake_press_header, (uint8_t *) brake_steering, &tx_mailbox) != HAL_OK) {
 		Error_Handler();
 	}
 
+	while (HAL_CAN_IsTxMessagePending(&hcan, tx_mailbox)) {HAL_Delay(1);}
+
 	if (HAL_CAN_AddTxMessage(&hcan, &torque_command_header, (uint8_t *) torque_command, &tx_mailbox) != HAL_OK) {
 		Error_Handler();
 	}
 
-
+	while (HAL_CAN_IsTxMessagePending(&hcan, tx_mailbox)) {HAL_Delay(1);}
 }
 
 //CANbus RX callback for getting motor speed info
@@ -760,7 +766,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
 
-	//HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_SET);
   /* USER CODE END Error_Handler_Debug */
 }

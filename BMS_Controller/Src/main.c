@@ -43,6 +43,10 @@
 #define MAX_CELL_VOLTAGE 4.2
 #define MIN_SEGMENT_VOLTAGE (MIN_CELL_VOLTAGE * CELLS_PER_SEGMENT)
 #define MAX_SEGMENT_VOLTAGE (MAX_CELL_VOLTAGE * CELLS_PER_SEGMENT)
+
+//Above this temperature, the fans kick on
+#define FAN_THRESHOLD 100
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -180,19 +184,23 @@ int main(void)
 	//Configure the CAN filter.
 	//This filters out all the can messages we don't want to listen to.
 	CAN_FilterTypeDef can_filter_config;
-	can_filter_config.FilterActivation = CAN_FILTER_DISABLE;
+	can_filter_config.FilterActivation = CAN_FILTER_ENABLE;
 	can_filter_config.SlaveStartFilterBank = 10;
 	can_filter_config.FilterBank = 0;
 	can_filter_config.FilterFIFOAssignment = CAN_FILTER_FIFO0;
 	can_filter_config.FilterMode = CAN_FILTERMODE_IDMASK;
 	can_filter_config.FilterScale = CAN_FILTERSCALE_32BIT;
-	can_filter_config.FilterIdHigh = 0x0<<5;
+	can_filter_config.FilterIdHigh = 0x033<<5;
 	can_filter_config.FilterIdLow = 0x0;
-	can_filter_config.FilterMaskIdHigh = 0x0<<5;
+	can_filter_config.FilterMaskIdHigh = 0x033<<5;
 	can_filter_config.FilterMaskIdLow = 0x0000;
 
 	//enable CANbus filter config
 	if (HAL_CAN_ConfigFilter(&hcan, &can_filter_config) != HAL_OK) {
+		Error_Handler();
+	}
+
+	if (HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
 		Error_Handler();
 	}
 
@@ -502,6 +510,54 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+//checks cell temperatures - if any are too hot, it opens the AIRs
+void check_cell_temps() {
+	for (int i = 0; i < 6; i++) {
+		if (high_cell_temps[i] >= FAN_THRESHOLD) {
+			//turn on fan
+
+		}
+		if (high_cell_temps[i] > 140) { //greater than 60 deg C, which is 40 deg F
+			//open AIRs
+		}
+	}
+}
+
+//CANbus RX callback for getting cell temp info
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan1) {
+	CAN_RxHeaderTypeDef rx_header;
+	uint8_t rx_data[8];
+	if (HAL_CAN_GetRxMessage(hcan1, CAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK) {
+		Error_Handler();
+	} else {
+		if (rx_header.StdId == 0x30) {
+			//TODO
+		} else if (rx_header.StdId == 0x31) {
+			low_cell_temps[0] = rx_data[0];
+			avg_cell_temps[0] = rx_data[1];
+			high_cell_temps[0] = rx_data[2];
+			low_cell_temps[1] = rx_data[3];
+			avg_cell_temps[1] = rx_data[4];
+			high_cell_temps[1] = rx_data[5];
+		} else if (rx_header.StdId == 0x32) {
+			low_cell_temps[2] = rx_data[0];
+			avg_cell_temps[2] = rx_data[1];
+			high_cell_temps[2] = rx_data[2];
+			low_cell_temps[3] = rx_data[3];
+			avg_cell_temps[3] = rx_data[4];
+			high_cell_temps[3] = rx_data[5];
+		} else if (rx_header.StdId == 0x33) {
+			low_cell_temps[4] = rx_data[0];
+			avg_cell_temps[4] = rx_data[1];
+			high_cell_temps[4] = rx_data[2];
+			low_cell_temps[5] = rx_data[3];
+			avg_cell_temps[5] = rx_data[4];
+			high_cell_temps[5] = rx_data[5];
+		}
+		check_cell_temps();
+	}
+}
 
 /* USER CODE END 4 */
 
